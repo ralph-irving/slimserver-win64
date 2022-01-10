@@ -122,8 +122,12 @@ sub initSearchPath {
 
 	# TODO: we might want to make this a bit more intelligent
 	# as Perl is not always in that folder (eg. German Windows)
-
-	Slim::Utils::Misc::addFindBinPaths('C:\Perl\bin');
+	if ($class->{osDetails}->{'binArch'} eq 'MSWin32-x64-multi-thread') {
+		Slim::Utils::Misc::addFindBinPaths('C:\Strawberry\perl\bin');
+	}
+	else {
+		Slim::Utils::Misc::addFindBinPaths('C:\perl\bin');
+	}
 }
 
 sub initMySQL {}
