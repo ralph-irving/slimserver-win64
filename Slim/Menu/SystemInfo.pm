@@ -238,12 +238,6 @@ sub infoLibrary {
 
 			{
 				type => 'text',
-				name => cstring($client, 'INFORMATION_PLAYLISTS') . cstring($client, 'COLON') . ' '
-							. Slim::Utils::Misc::delimitThousands($totals->{playlist}),
-			},
-
-			{
-				type => 'text',
 				name => cstring($client, 'INFORMATION_TIME') . cstring($client, 'COLON') . ' '
 							. Slim::Utils::DateTime::timeFormat(Slim::Schema->totalTime($client)),
 			},
@@ -326,7 +320,7 @@ sub infoServer {
 
 		{
 			type => 'text',
-			name => sprintf("%s%s %s - %s - %s ",
+			name => sprintf("%s%s %s - %s - %s ", 
 						cstring($client, 'INFORMATION_OPERATINGSYSTEM' . ($menu ? '_ABBR' : '')),
 						cstring($client, 'COLON'),
 						$osDetails->{'osName'},
@@ -349,6 +343,16 @@ sub infoServer {
 		{
 			type => 'text',
 			name => 'Audio::Scan' . cstring($client, 'COLON') . ' ' . $Audio::Scan::VERSION,
+		},
+
+		{
+			type => 'text',
+			name => 'Mozilla::CA' . cstring($client, 'COLON') . ' ' . $Mozilla::CA::VERSION,
+		},
+
+		{
+			type => 'text',
+			name => sprintf("Net::SSLeay%s %s - %s", cstring($client, 'COLON'), $Net::SSLeay::VERSION, Net::SSLeay::SSLeay_version(Net::SSLeay::SSLEAY_VERSION())),
 		},
 
 		{
