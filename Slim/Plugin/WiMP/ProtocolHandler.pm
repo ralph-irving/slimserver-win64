@@ -260,6 +260,7 @@ sub _gotTrack {
 		duration  => $info->{duration},
 		bitrate   => $format eq 'flac' ? 'PCM VBR' : ($info->{bitrate} . 'k CBR'),
 		type      => lc($format) eq 'mp4' ? 'AAC' : uc($format),
+		replay_gain => $info->{replayGain} || 0,
 		info_link => 'plugins/wimp/trackinfo.html',
 		icon      => $icon,
 	};
@@ -274,6 +275,7 @@ sub _gotTrack {
 		sub {
 			my $meta = $cache->get('wimp_meta_' . $info->{id});
 			$meta->{bitrate} = sprintf("%.0f" . Slim::Utils::Strings::string('KBPS'), $song->track->bitrate/1000);
+			$song->track->setAttributes($meta);
 			$cache->set( 'wimp_meta_' . $info->{id}, $meta, 86400 );
 			$params->{successCb}->();
 		},
@@ -281,7 +283,8 @@ sub _gotTrack {
 			my ($self, $error) = @_;
 			$log->warn( "could not find $format header $error" );
 			$params->{successCb}->();
-		} );
+		}
+	);
 }
 
 sub _gotTrackError {
