@@ -221,13 +221,12 @@ sub rescan {
 			AND             content_type $ctFilter
 		} . (IS_SQLITE ? '' : ' ORDER BY url');
 
-		$log->error("Delete temporary table if exists") unless main::SCANNER && $main::progress;
 		# 2. Files that are new and not in the database.
+		$log->error("Build temporary table for new tracks") unless main::SCANNER && $main::progress;
 		$dbh->do('DROP TABLE IF EXISTS diskonly');
-		$log->error("Re-build temporary table") unless main::SCANNER && $main::progress;
-    	$dbh->do( qq{
-    		CREATE TEMPORARY TABLE diskonly AS
-				SELECT          DISTINCT(url) as url
+		$dbh->do( qq{
+			CREATE TEMPORARY TABLE diskonly AS
+				SELECT          DISTINCT(url) AS url
 				FROM            scanned_files
 				WHERE           url NOT IN (
 					SELECT url FROM tracks
@@ -235,7 +234,7 @@ sub rescan {
 				)
 				AND             url LIKE '$basedir%'
 				AND             filesize != 0
-    	} );
+		} );
 
 		my $onDiskOnlySQL = qq{
 			SELECT          url
@@ -243,20 +242,27 @@ sub rescan {
 		} . (IS_SQLITE ? '' : ' ORDER BY url');
 
 		# 3. Files that have changed mtime or size.
-		# XXX can this query be optimized more?
-		my $changedOnlySQL = qq{
-			SELECT DISTINCT(scanned_files.url)
-			FROM scanned_files
-			JOIN tracks ON (
-				scanned_files.url = tracks.url
-				AND (
-					scanned_files.timestamp != tracks.timestamp
-					OR
-					scanned_files.filesize != tracks.filesize
+		$log->error("Build temporary table for changed tracks") unless main::SCANNER && $main::progress;
+		$dbh->do('DROP TABLE IF EXISTS changed');
+		$dbh->do( qq{
+			CREATE TEMPORARY TABLE changed AS
+				SELECT DISTINCT(scanned_files.url) AS url
+				FROM   scanned_files
+				JOIN   tracks ON (
+					scanned_files.url = tracks.url
+					AND (
+						scanned_files.timestamp != tracks.timestamp
+						OR
+						scanned_files.filesize  != tracks.filesize
+					)
+					AND tracks.content_type $ctFilter
 				)
-				AND tracks.content_type $ctFilter
-			)
-			WHERE scanned_files.url LIKE '$basedir%'
+				WHERE  scanned_files.url LIKE '$basedir%'
+		} );
+
+		my $changedOnlySQL = qq{
+			SELECT url
+			FROM   changed
 		} . (IS_SQLITE ? '' : ' ORDER BY scanned_files.url');
 
 		# bug 18078 - Windows doesn't handle DST changes in a file's timestamp correctly. We need to do this on our end.
@@ -532,6 +538,7 @@ sub updateTracks {
 
 	if ( $changedOnlyCount && !Slim::Music::Import->hasAborted() ) {
 		my $changedOnlySth;
+		my $changedOnlyDone = 0;
 
 		$pending{$nextFolder} |= PENDING_CHANGED;
 
@@ -556,15 +563,16 @@ sub updateTracks {
 			# Page through the files, this is to avoid a long-running read query which
 			# would prevent WAL checkpoints from occurring.
 			if ( !$changedOnlySth ) {
-				my $sql = $changedOnlySQL . " LIMIT 0, " . CHUNK_SIZE;
+				my $sql = $changedOnlySQL . " LIMIT $changedOnlyDone, " . CHUNK_SIZE;
 				$changedOnlySth = $dbh->prepare($sql);
 				$changedOnlySth->execute;
 				$changedOnlySth->bind_col(1, \$changed);
 			}
 
-			if ( $changedOnlySth->fetch ) {
+			if ( $changedOnlyDone < $changedOnlyCount && $changedOnlySth->fetch ) {
 				$progress && $progress->update( Slim::Utils::Misc::pathFromFileURL($changed) );
 				$$changes++;
+				$changedOnlyDone++;
 
 				changed($changed);
 
@@ -573,7 +581,7 @@ sub updateTracks {
 			else {
 				my $more = 1;
 
-				if ( !$changedOnlySth->rows || $changedOnlyCount == $$changes ) {
+				if ( $changedOnlyDone >= $changedOnlyCount || !$changedOnlySth->rows ) {
 					if ( !$args->{no_async} ) {
 						$args->{paths} = $paths;
 						markDone( $nextFolder => PENDING_CHANGED, $$changes, $args );
@@ -979,6 +987,7 @@ sub changed {
 
 			my $orig = {
 				year => $origTrack->{year},
+				album => $origTrack->{album_id} || 0,
 			};
 
 			# Fetch all contributor IDs used on the original track
@@ -1057,6 +1066,11 @@ sub changed {
 
 				# Auto-rescan mode, immediately merge VA
 				Slim::Schema->mergeSingleVAAlbum( $album->id );
+			}
+
+			# remove album if we've removed its last track
+			if ( !$album || $album->id != $orig->{album} ) {
+				Slim::Schema::Album->rescan($orig->{album});
 			}
 
 			# XXX
